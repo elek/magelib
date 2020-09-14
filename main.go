@@ -132,7 +132,10 @@ func downloadIfRequired(downloadPattern string, version string, name string, exc
         downloadedFile := path.Join(cacheTmpDir, "downloaded.tar.gz")
         err = sh.Run("wget", url, "-O", downloadedFile)
         if err != nil {
-            return "", err
+            err = sh.Run("curl", "--fail", "-LSso", downloadedFile, url)
+            if err != nil {
+                return "", err
+            }
         }
 
         err = os.MkdirAll(cacheDir, 0755)
