@@ -12,8 +12,30 @@ import (
     "strings"
 )
 
+func GetDownloadUrl(path string, version string) (string, error) {
+    if strings.HasPrefix(path, "http") {
+        return VerifyUrl(path)
+    } else {
+        return GetApacheDownloadUrl(fmt.Sprintf(path, version, version))
+    }
+}
+
 func GetApacheDownloadUrl(path string) (string, error) {
-    url := fmt.Sprintf("https://www-eu.apache.org/dist/" + path)
+    urls := [...]string {
+        "https://www-eu.apache.org/dist/" + path,
+        "https://archive.apache.org/dist/" + path,
+    }
+
+    for _, url := range urls {
+        if _, err := VerifyUrl(url); err == nil {
+            return url, nil
+        }
+    }
+
+    return "", errors.New("Can't find download url for " + path)
+}
+
+func VerifyUrl(url string) (string, error) {
     resp, err := http.Head(url)
     if err != nil {
         return "", err
@@ -21,16 +43,7 @@ func GetApacheDownloadUrl(path string) (string, error) {
     if resp.StatusCode == 200 {
         return url, nil
     }
-    url = fmt.Sprintf("https://archive.apache.org/dist/" + path)
-    resp, err = http.Head(url)
-    if err != nil {
-        return "", err
-    }
-    if resp.StatusCode == 200 {
-        return url, nil
-    }
-    return "", errors.New("Can't find download url for " + path)
-
+    return "", errors.New("Package not found at " + url)
 }
 
 type FlokkrDescriptor struct {
@@ -110,7 +123,7 @@ func BuildContainer(desc FlokkrDescriptor, version string, tags []string) error 
 }
 
 func downloadIfRequired(downloadPattern string, version string, name string, excludes []string) (string, error) {
-    url, err := GetApacheDownloadUrl(fmt.Sprintf(downloadPattern, version, version))
+    url, err := GetDownloadUrl(downloadPattern, version)
     if err != nil {
         return "", err
     }
@@ -132,7 +145,10 @@ func downloadIfRequired(downloadPattern string, version string, name string, exc
         downloadedFile := path.Join(cacheTmpDir, "downloaded.tar.gz")
         err = sh.Run("wget", url, "-O", downloadedFile)
         if err != nil {
-            return "", err
+            err = sh.Run("curl", "--fail", "-LSso", downloadedFile, url)
+            if err != nil {
+                return "", err
+            }
         }
 
         err = os.MkdirAll(cacheDir, 0755)
